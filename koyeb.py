@@ -22,15 +22,15 @@ session = requests.Session()
 # 内置Python环境变量[纯Python环境可启用]
 #os.environ['KOY_EB'] = "aaa-bbb"
 
-def get_time_stamp(result):
-    utct_date = datetime.datetime.strptime(result, "%Y-%m-%dT%H:%M:%S.%f%z")
-    local_date = utct_date + datetime.timedelta(hours=8)
+def get_time_stamp(result, hour_zone):
+    utct_date = datetime.datetime.strptime(result[:21], "%Y-%m-%dT%H:%M:%S.%f")
+    local_date = utct_date + datetime.timedelta(hours=8-hour_zone)
     local_date_srt = datetime.datetime.strftime(local_date, "%Y-%m-%d %H:%M:%S")
     return local_date_srt
 
 def auto_living(token):
     # 获取账户应用信息
-    list_url = 'https://app.koyeb.com/v1/apps?limit=100'
+    list_url = 'https://app.koyeb.com/v1/services?limit=100'
     list_head = {
         'authorization': f'Bearer {token}',
         'cookie': f'accessToken={token}',
@@ -41,36 +41,37 @@ def auto_living(token):
     res_list = session.get(list_url, headers=list_head)
     if res_list.status_code == 200:
         list_date = res_list.json()
-        if len(list_date.get("apps")) > 0:
-            for i in range(len(list_date.get("apps"))):
-                stop_url = f"https://app.koyeb.com/v1/apps/{list_date.get('apps')[i]['id']}/pause"  # 暂停api
-                run_url = f"https://app.koyeb.com/v1/apps/{list_date.get('apps')[i]['id']}/resume"  # 启动api
+        if len(list_date.get("services")) > 0:
+            for i in range(len(list_date.get("services"))):
+                stop_url = f"https://app.koyeb.com/v1/services/{list_date.get('services')[i]['id']}/pause"  # 暂停api
+                run_url = f"https://app.koyeb.com/v1/services/{list_date.get('services')[i]['id']}/resume"  # 启动api
                 ac_head = {
                     'authorization': f'Bearer {token}',
+                    'cookie': f'accessToken={token}',
                     'content-type': 'application/json',
                     'origin': 'https://app.koyeb.com',
-                    'referer': f"https://app.koyeb.com/apps/{list_date.get('apps')[i]['id']}/settings/danger-zone",
+                    'referer': f"https://app.koyeb.com/apps/{list_date.get('services')[i]['id']}/settings",
                     'user-agent': 'Mozilla/5.0 (Linux; Android 10; PBEM00) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.52 Mobile Safari/537.36'
                 }
-                if list_date.get('apps')[i]['status'].lower() == "healthy":
-                    List.append(f"{list_date.get('apps')[i]['name']} 应用运行正常！！！")
-                elif list_date.get('apps')[i]['status'].lower() == "paused":
-                    List.append(f"{list_date.get('apps')[i]['name']} 应用已暂停运行！！！")
+                if list_date.get('services')[i]['status'].lower() == "healthy":
+                    List.append(f"{list_date.get('services')[i]['name']} 应用运行正常！！！")
+                elif list_date.get('services')[i]['status'].lower() == "paused":
+                    List.append(f"{list_date.get('services')[i]['name']} 应用已暂停运行！！！")
                     res_run = session.post(run_url, headers=ac_head)
                     if res_run.status_code == 200:
                         List.append(f"启动命令已发送，应用将在3分钟后恢复正常！！！")
                     else:
                         List.append(f"启动命令发送出错，请检查url！！！")
-                elif list_date.get('apps')[i]['status'].lower() == "resuming":
-                    List.append(f"{list_date.get('apps')[i]['name']} 应用正在启动中！！！")
+                elif list_date.get('services')[i]['status'].lower() == "resuming":
+                    List.append(f"{list_date.get('services')[i]['name']} 应用正在启动中！！！")
                 else:
-                    List.append(f"{list_date.get('apps')[i]['name']} 应用运行出错！！！")
+                    List.append(f"{list_date.get('services')[i]['name']} 应用运行出错！！！")
                     res_stop = session.post(stop_url, headers=ac_head)
                     if res_stop.status_code == 200:
                         List.append(f"暂停命令已发送，等待1分钟后发送启动命令")
                     else:
                         List.append(f"暂停命令发送出错，请检查url！！！")
-                    time.sleep(60)
+                    # time.sleep(60)
                     res_run = session.post(run_url, headers=ac_head)
                     if res_run.status_code == 200:
                         List.append(f"启动命令已发送，应用将在3分钟后恢复正常！！！")
@@ -110,7 +111,8 @@ def login(usr, pwd):
             info = resp.json()
             List.append(f"账号`{info.get('user').get('name')}`登陆成功")
             List.append(f"ID：{info.get('user').get('id')}")
-            List.append(f"注册日期：{get_time_stamp(info.get('user').get('created_at'))}")
+            List.append(f"注册日期：{get_time_stamp(info.get('user').get('created_at'), 0)}")
+            List.append(f"当前登录日期：{get_time_stamp(status.get('token').get('expires_at'), 24)}")
             lastlogin_url = 'https://app.koyeb.com/v1/activities?offset=0&limit=20'
             lastlogin_head = {
                 'authorization': f'Bearer {token}',
@@ -125,10 +127,9 @@ def login(usr, pwd):
                 j = 0
                 for i in range(len(lastlogin.get('activities'))):
                     if lastlogin.get('activities')[i].get('object').get('name') == "console" and j < 2:
-                        if lastlogin.get('count') > 1 and j == 1:
-                            List.append(f"上次登录日期：{get_time_stamp(lastlogin.get('activities')[i].get('created_at'))}")
-                        else:
-                            List.append(f"当前登录日期：{get_time_stamp(lastlogin.get('activities')[i].get('created_at'))}")
+                        if len(lastlogin.get('activities')) > 1 and j == 1:
+                            List.append(f"上次登录日期：{get_time_stamp(lastlogin.get('activities')[i].get('created_at'), 0)}")
+                            break
                         j += 1
             else:
                 print(resg.text)
